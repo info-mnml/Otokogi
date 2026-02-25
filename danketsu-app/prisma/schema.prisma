@@ -10,56 +10,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id            String         @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  email         String         @unique
-  password      String?        // オプション: NextAuth.jsで使用する場合は必要
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  participants  Participant[]
-  events        Event[]
-}
-
-model Participant {
-  id             String          @id @default(auto()) @map("_id") @db.ObjectId
-  name           String
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  user           User            @relation(fields: [userId], references: [id])
-  userId         String          @db.ObjectId
-  participations Participation[]
-
-  @@index([userId])
-}
-
 model Event {
   id             String          @id @default(auto()) @map("_id") @db.ObjectId
   name           String
   date           DateTime
   location       String?
   description    String?
-  totalAmount    Float           @default(0)
+  totalAmount    Float?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  user           User            @relation(fields: [userId], references: [id])
-  userId         String          @db.ObjectId
   participations Participation[]
+}
 
-  @@index([userId])
+model Participant {
+  id             String          @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  winCount       Int             @default(0)
+  loseCount      Int             @default(0)
+  totalPaid      Float           @default(0)
+  totalCollected Float           @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  participations Participation[]
 }
 
 model Participation {
-  id            String      @id @default(auto()) @map("_id") @db.ObjectId
-  event         Event       @relation(fields: [eventId], references: [id])
-  eventId       String      @db.ObjectId
-  participant   Participant @relation(fields: [participantId], references: [id])
-  participantId String      @db.ObjectId
-  isWinner      Boolean     @default(false)
-  paidAmount    Float       @default(0)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  @@index([eventId])
-  @@index([participantId])
+  id                 String      @id @default(auto()) @map("_id") @db.ObjectId
+  eventId            String      @db.ObjectId
+  participantId      String      @db.ObjectId
+  isWinner           Boolean?
+  amountPaid         Float       @default(0)
+  amountCollected    Float       @default(0)
+  jankenChoiceWinner String?     // グー、チョキ、パー
+  jankenChoiceLoser  String?     // グー、チョキ、パー
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  event              Event       @relation(fields: [eventId], references: [id])
+  participant        Participant @relation(fields: [participantId], references: [id])
 }

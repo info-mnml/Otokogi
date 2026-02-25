@@ -1,93 +1,89 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/db/prisma';
 
-// じゃんけん結果を追加
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+interface RouteParams {
+  params: {
+    id: string;
+  }
+}
+
+export async function POST(request: Request, { params }: RouteParams) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const body = await request.json();
-    const { participantId, isWinner, paidAmount } = body;
-    
-    // イベントの所有者を確認
-    const event = await prisma.event.findUnique({
-      where: {
-        id: params.id,
-      },
-    });
-    
-    if (!event) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
-    }
-    
-    if (event.userId !== session.user.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    }
-    
-    // 参加者が既にこのイベントに参加しているか確認
-    const existingParticipation = await prisma.participation.findFirst({
-      where: {
-        eventId: params.id,
-        participantId,
-      },
-    });
-    
-    let participation;
-    
-    if (existingParticipation) {
-      // 既存の参加記録を更新
-      participation = await prisma.participation.update({
+    const { winnerId, loserId, winnerChoice, loserChoice, amount } = await request.json();
+    const eventId = params.id;
+
+    // トランザクションを使用して一貫性を保証
+    await prisma.$transaction(async (tx) => {
+      // 勝者の参加記録を更新/作成
+      const winnerParticipation = await tx.participation.upsert({
         where: {
-          id: existingParticipation.id,
+          id: `${eventId}_${winnerId}`,
         },
-        data: {
-          isWinner,
-          paidAmount: parseFloat(paidAmount.toString()),
+        update: {
+          isWinner: true,
+          amountCollected: { increment: amount },
+          jankenChoiceWinner: winnerChoice,
+        },
+        create: {
+          eventId,
+          participantId: winnerId,
+          isWinner: true,
+          amountCollected: amount,
+          amountPaid: 0,
+          jankenChoiceWinner: winnerChoice,
         },
       });
-    } else {
-      // 新しい参加記録を作成
-      participation = await prisma.participation.create({
-        data: {
-          eventId: params.id,
-          participantId,
-          isWinner,
-          paidAmount: parseFloat(paidAmount.toString()),
+
+      // 敗者の参加記録を更新/作成
+      const loserParticipation = await tx.participation.upsert({
+        where: {
+          id: `${eventId}_${loserId}`,
+        },
+        update: {
+          isWinner: false,
+          amountPaid: { increment: amount },
+          jankenChoiceLoser: loserChoice,
+        },
+        create: {
+          eventId,
+          participantId: loserId,
+          isWinner: false,
+          amountPaid: amount,
+          amountCollected: 0,
+          jankenChoiceLoser: loserChoice,
         },
       });
-    }
-    
-    // イベントの総額を更新
-    const totalAmount = await prisma.participation.aggregate({
-      where: {
-        eventId: params.id,
-      },
-      _sum: {
-        paidAmount: true,
-      },
+
+      // 勝者の統計を更新
+      await tx.participant.update({
+        where: { id: winnerId },
+        data: {
+          winCount: { increment: 1 },
+          totalCollected: { increment: amount },
+        },
+      });
+
+      // 敗者の統計を更新
+      await tx.participant.update({
+        where: { id: loserId },
+        data: {
+          loseCount: { increment: 1 },
+          totalPaid: { increment: amount },
+        },
+      });
+
+      // イベントの支払総額を更新
+      await tx.event.update({
+        where: { id: eventId },
+        data: {
+          totalAmount: { increment: amount },
+        },
+      });
     });
-    
-    await prisma.event.update({
-      where: {
-        id: params.id,
-      },
-      data: {
-        totalAmount: totalAmount._sum.paidAmount || 0,
-      },
-    });
-    
-    return NextResponse.json(participation, { status: 201 });
+
+    return NextResponse.json({ success: true }, { status: 201 });
   } catch (error) {
-    console.error('Error recording janken result:', error);
-    return NextResponse.json({ error: 'Failed to record janken result' }, { status: 500 });
+    console.error('Failed to record janken result:', error);
+    return NextResponse.json({ error: 'じゃんけん結果の記録に失敗しました' }, { status: 500 });
   }
 }

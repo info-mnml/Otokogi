@@ -1,65 +1,29 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/db/prisma';
 
-// イベント一覧を取得
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
     const events = await prisma.event.findMany({
-      where: {
-        userId: session.user.id,
-      },
       orderBy: {
         date: 'desc',
       },
-      include: {
-        participations: {
-          include: {
-            participant: true,
-          },
-        },
-      },
     });
-    
     return NextResponse.json(events);
   } catch (error) {
-    console.error('Error fetching events:', error);
-    return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
+    console.error('Failed to fetch events:', error);
+    return NextResponse.json({ error: 'イベントの取得に失敗しました' }, { status: 500 });
   }
 }
 
-// 新しいイベントを作成
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const body = await request.json();
-    const { name, date, location, description } = body;
-    
-    const newEvent = await prisma.event.create({
-      data: {
-        name,
-        date: new Date(date),
-        location,
-        description,
-        userId: session.user.id,
-      },
+    const data = await request.json();
+    const event = await prisma.event.create({
+      data,
     });
-    
-    return NextResponse.json(newEvent, { status: 201 });
+    return NextResponse.json(event, { status: 201 });
   } catch (error) {
-    console.error('Error creating event:', error);
-    return NextResponse.json({ error: 'Failed to create event' }, { status: 500 });
+    console.error('Failed to create event:', error);
+    return NextResponse.json({ error: 'イベントの作成に失敗しました' }, { status: 500 });
   }
 }

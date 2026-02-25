@@ -1,58 +1,57 @@
-import { Event } from "@/types";
+import type { Event, EventWithParticipations } from '@/types';
 
-// LocalStorageからイベントを取得
-export const getEvents = (): Event[] => {
-  if (typeof window === 'undefined') return [];
-  
-  const events = localStorage.getItem('events');
-  return events ? JSON.parse(events) : [];
-};
-
-// イベントを追加
-export const addEvent = (event: Omit<Event, 'id' | 'createdAt'>): Event => {
-  const newEvent: Event = {
-    ...event,
-    id: Date.now().toString(),
-    createdAt: new Date().toISOString(),
-  };
-  
-  const events = getEvents();
-  const updatedEvents = [newEvent, ...events];
-  
-  localStorage.setItem('events', JSON.stringify(updatedEvents));
-  return newEvent;
-};
-
-// 特定のイベントを取得
-export const getEvent = (id: string): Event | undefined => {
-  const events = getEvents();
-  return events.find(event => event.id === id);
-};
-
-// イベントを更新
-export const updateEvent = (id: string, eventData: Partial<Event>): Event | undefined => {
-  const events = getEvents();
-  const index = events.findIndex(event => event.id === id);
-  
-  if (index !== -1) {
-    const updatedEvent = { ...events[index], ...eventData };
-    events[index] = updatedEvent;
-    localStorage.setItem('events', JSON.stringify(events));
-    return updatedEvent;
+export async function getAllEvents(): Promise<Event[]> {
+  const response = await fetch('/api/events');
+  if (!response.ok) {
+    throw new Error('イベントの取得に失敗しました');
   }
-  
-  return undefined;
-};
+  return response.json();
+}
 
-// イベントを削除
-export const deleteEvent = (id: string): boolean => {
-  const events = getEvents();
-  const filteredEvents = events.filter(event => event.id !== id);
-  
-  if (filteredEvents.length < events.length) {
-    localStorage.setItem('events', JSON.stringify(filteredEvents));
-    return true;
+export async function getEventById(id: string): Promise<EventWithParticipations | null> {
+  const response = await fetch(`/api/events/${id}`);
+  if (!response.ok) {
+    throw new Error('イベントの取得に失敗しました');
   }
-  
-  return false;
-};
+  return response.json();
+}
+
+export async function createEvent(eventData: Omit<Event, 'id' | 'createdAt' | 'updatedAt'>): Promise<Event> {
+  const response = await fetch('/api/events', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(eventData),
+  });
+
+  if (!response.ok) {
+    throw new Error('イベントの作成に失敗しました');
+  }
+  return response.json();
+}
+
+export async function updateEvent(id: string, eventData: Partial<Event>): Promise<Event> {
+  const response = await fetch(`/api/events/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(eventData),
+  });
+
+  if (!response.ok) {
+    throw new Error('イベントの更新に失敗しました');
+  }
+  return response.json();
+}
+
+export async function deleteEvent(id: string): Promise<void> {
+  const response = await fetch(`/api/events/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error('イベントの削除に失敗しました');
+  }
+}

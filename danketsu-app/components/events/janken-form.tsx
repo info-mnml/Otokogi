@@ -1,256 +1,253 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { z } from "zod";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import type { Participant } from "@/types";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Participant, Participation } from "@/types";
-import { getParticipants, updateParticipant } from "@/lib/utils/participants";
-import { addParticipations, getParticipationsByEventId } from "@/lib/utils/participations";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "@/components/ui/use-toast";
+import { recordJankenResult } from "@/lib/utils/participations";
 
-const jankenFormSchema = z.object({
-  participantIds: z.array(z.string()).min(1, {
-    message: "少なくとも1人の参加者を選択してください",
+const jankenSchema = z.object({
+  winnerId: z.string().min(1, "勝者は必須です"),
+  loserId: z.string().min(1, "敗者は必須です"),
+  winnerChoice: z.enum(["グー", "チョキ", "パー"], {
+    required_error: "勝者の手は必須です",
   }),
-  winnerId: z.string().min(1, {
-    message: "勝者を選択してください",
+  loserChoice: z.enum(["グー", "チョキ", "パー"], {
+    required_error: "敗者の手は必須です",
   }),
+  amount: z.coerce.number().min(1, "金額は1円以上で入力してください"),
 });
 
-type JankenFormValues = z.infer<typeof jankenFormSchema>;
+type JankenFormProps = {
+  eventId: string;
+  participants: Participant[];
+};
 
-export function JankenForm({ eventId, totalAmount }: { eventId: string; totalAmount: number }) {
+export function JankenForm({ eventId, participants }: JankenFormProps) {
   const router = useRouter();
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // フォームの初期化
-  const form = useForm<JankenFormValues>({
-    resolver: zodResolver(jankenFormSchema),
+  const form = useForm<z.infer<typeof jankenSchema>>({
+    resolver: zodResolver(jankenSchema),
     defaultValues: {
-      participantIds: [],
       winnerId: "",
+      loserId: "",
+      winnerChoice: undefined,
+      loserChoice: undefined,
+      amount: 1000,
     },
   });
 
-  // コンポーネントマウント時に既存のデータをロード
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // 参加者データをロード
-        const allParticipants = getParticipants();
-        setParticipants(allParticipants);
+  const winnerId = form.watch("winnerId");
+  const loserId = form.watch("loserId");
 
-        // 既存の参加記録をロード
-        const existingParticipations = getParticipationsByEventId(eventId);
-        
-        if (existingParticipations.length > 0) {
-          // 参加者IDのリストを作成
-          const participantIds = existingParticipations.map((p: Participation) => p.participantId);
-          
-          // 勝者を特定
-          const winner = existingParticipations.find((p: Participation) => p.won === true);
-          const winnerId = winner ? winner.participantId : "";
-          
-          // フォームに値をセット
-          form.reset({
-            participantIds: participantIds,
-            winnerId: winnerId
-          });
-          
-          console.log("既存のじゃんけん結果を読み込みました", { participantIds, winnerId });
-        }
-      } catch (error) {
-        console.error("データ読み込み中にエラーが発生しました", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [eventId, form]);
-
-  const watchParticipantIds = form.watch("participantIds");
-
-  // 参加者選択時に勝者が参加者に含まれていない場合はリセット
-  useEffect(() => {
-    const winnerId = form.getValues("winnerId");
-    if (winnerId && !watchParticipantIds.includes(winnerId)) {
-      form.setValue("winnerId", "");
+  const onSubmit = async (data: z.infer<typeof jankenSchema>) => {
+    if (data.winnerId === data.loserId) {
+      form.setError("loserId", {
+        type: "manual",
+        message: "勝者と敗者は異なる人を選択してください",
+      });
+      return;
     }
-  }, [watchParticipantIds, form]);
 
-  // 送信処理
-  async function onSubmit(data: JankenFormValues) {
+    // じゃんけんの手の整合性をチェック
+    const validCombinations = [
+      { winner: "グー", loser: "チョキ" },
+      { winner: "チョキ", loser: "パー" },
+      { winner: "パー", loser: "グー" },
+    ];
+
+    const isValidCombination = validCombinations.some(
+      combo => combo.winner === data.winnerChoice && combo.loser === data.loserChoice
+    );
+
+    if (!isValidCombination) {
+      form.setError("loserChoice", {
+        type: "manual",
+        message: `${data.winnerChoice}は${data.loserChoice}に勝てません`,
+      });
+      return;
+    }
+
     setIsSubmitting(true);
-    try {
-      const { participantIds, winnerId } = data;
-      const participantCount = participantIds.length;
-      
-      // 予想支払額（一人当たり）
-      const expectedAmount = Math.floor(totalAmount / participantCount);
-      
-      // 各参加者の記録を更新
-      participantIds.forEach(id => {
-        const participant = participants.find(p => p.id === id);
-        if (participant) {
-          const isWinner = id === winnerId;
-          const updates = {
-            totalParticipation: (participant.totalParticipation || 0) + 1,
-            winCount: isWinner ? (participant.winCount || 0) + 1 : (participant.winCount || 0),
-            lossCount: isWinner ? (participant.lossCount || 0) : (participant.lossCount || 0) + 1,
-            totalPaid: isWinner ? (participant.totalPaid || 0) + totalAmount : (participant.totalPaid || 0),
-            totalExpected: (participant.totalExpected || 0) + expectedAmount,
-          };
-          updateParticipant(id, updates);
-        }
-      });
-      
-      // 参加記録を追加
-      const participationsToSave = participantIds.map(id => {
-        const isWinner = id === winnerId;
-        return {
-          eventId: eventId,
-          participantId: id,
-          attended: true,
-          won: isWinner,
-          paidAmount: isWinner ? totalAmount : 0,
-          expectedAmount: expectedAmount
-        };
-      });
-      
-      // 参加記録の保存
-      addParticipations(eventId, participationsToSave);
 
-      // 送信成功後、現在のページをリロード
-      setTimeout(() => {
-        window.location.href = `/events/${eventId}?t=${Date.now()}`;
-      }, 500);
+    try {
+      await recordJankenResult(
+        eventId,
+        data.winnerId,
+        data.loserId,
+        data.winnerChoice,
+        data.loserChoice,
+        data.amount
+      );
+
+      toast({
+        title: "じゃんけん結果を記録しました",
+        description: `${participants.find(p => p.id === data.winnerId)?.name}の勝ち (${data.amount.toLocaleString()}円)`,
+      });
+
+      // フォームをリセット
+      form.reset({
+        winnerId: "",
+        loserId: "",
+        winnerChoice: undefined,
+        loserChoice: undefined,
+        amount: 1000,
+      });
+
+      // 画面を更新
+      router.refresh();
     } catch (error) {
-      console.error("じゃんけん結果の登録に失敗しました", error);
+      console.error("Failed to record janken result:", error);
+      toast({
+        title: "エラーが発生しました",
+        description: "じゃんけん結果の記録に失敗しました。後でもう一度お試しください。",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
-  }
-
-  if (isLoading) {
-    return <div>データを読み込み中...</div>;
-  }
+  };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        <FormField
-          control={form.control}
-          name="participantIds"
-          render={() => (
-            <FormItem>
-              <div className="mb-4">
-                <FormLabel>参加者</FormLabel>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {participants.map((participant) => (
-                  <FormField
-                    key={participant.id}
-                    control={form.control}
-                    name="participantIds"
-                    render={({ field }) => {
-                      return (
-                        <FormItem
-                          key={participant.id}
-                          className="flex flex-row items-start space-x-3 space-y-0"
-                        >
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value?.includes(participant.id)}
-                              onCheckedChange={(checked) => {
-                                return checked
-                                  ? field.onChange([...field.value, participant.id])
-                                  : field.onChange(
-                                      field.value?.filter(
-                                        (value) => value !== participant.id
-                                      )
-                                    );
-                              }}
-                            />
-                          </FormControl>
-                          <FormLabel className="font-normal">
-                            {participant.name}
-                          </FormLabel>
-                        </FormItem>
-                      );
-                    }}
-                  />
-                ))}
-              </div>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="winnerId"
-          render={({ field }) => (
-            <FormItem className="space-y-3">
-              <FormLabel>勝者</FormLabel>
-              <FormControl>
-                <RadioGroup
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="winnerId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>勝者</FormLabel>
+                <Select
                   onValueChange={field.onChange}
+                  defaultValue={field.value}
                   value={field.value}
-                  className="flex flex-col space-y-1"
                 >
-                  {participants
-                    .filter((participant) =>
-                      watchParticipantIds.includes(participant.id)
-                    )
-                    .map((participant) => (
-                      <FormItem
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="勝者を選択" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {participants.map((participant) => (
+                      <SelectItem
                         key={participant.id}
-                        className="flex items-center space-x-3 space-y-0"
+                        value={participant.id}
+                        disabled={participant.id === loserId}
                       >
-                        <FormControl>
-                          <RadioGroupItem value={participant.id} />
-                        </FormControl>
-                        <FormLabel className="font-normal">
-                          {participant.name}
-                        </FormLabel>
-                      </FormItem>
+                        {participant.name}
+                      </SelectItem>
                     ))}
-                </RadioGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <div className="flex justify-end space-x-4">
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={() => router.back()}
-            disabled={isSubmitting}
-          >
-            キャンセル
-          </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "保存中..." : "保存"}
-          </Button>
-        </div>
-      </form>
-    </Form>
-  );
-}
+          <FormField
+            control={form.control}
+            name="loserId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>敗者</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  value={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="敗者を選択" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {participants.map((participant) => (
+                      <SelectItem
+                        key={participant.id}
+                        value={participant.id}
+                        disabled={participant.id === winnerId}
+                      >
+                        {participant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="winnerChoice"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel>勝者の手</FormLabel>
+                <FormControl>
+                  <RadioGroup
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    className="flex space-x-4"
+                  >
+                    <FormItem className="flex items-center space-x-1 space-y-0">
+                      <FormControl>
+                        <RadioGroupItem value="グー" />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">
+                        グー
+                      </FormLabel>
+                    </FormItem>
+                    <FormItem className="flex items-center space-x-1 space-y-0">
+                      <FormControl>
+                        <RadioGroupItem value="チョキ" />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">
+                        チョキ
+                      </FormLabel>
+                    </FormItem>
+                    <FormItem className="flex items-center space-x-1 space-y-0">
+                      <FormControl>
+                        <RadioGroupItem value="パー" />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">
+                        パー
+                      </FormLabel>
+                    </FormItem>
+                  </RadioGroup>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="loserChoice"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel>敗者の手</FormLabel>
+                <FormControl>
+                  <RadioGroup
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    className="flex space-x-4"
+                  >
+                    <FormItem className="flex items-center space-x-1 space-y-0">
+                      <FormControl>
+                        <RadioGroupItem value="グー" />
+                      </FormControl>
+                      <FormLabel className="font-normal cursor-pointer">
+                        グー
+                      </FormLabel>
+                    </FormItem>
+                    <FormItem className="flex items-center

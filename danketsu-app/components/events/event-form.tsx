@@ -1,196 +1,150 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
-import { addEvent } from "@/lib/utils/events";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/use-toast";
+import { createEvent, updateEvent } from "@/lib/utils/events";
+import type { EventFormData } from "@/types";
 
-// イベントフォームのバリデーションスキーマ
-const eventFormSchema = z.object({
-  name: z.string().min(1, {
-    message: "イベント名を入力してください",
-  }),
-  date: z.date({
-    required_error: "日付を選択してください",
-  }),
-  venue: z.string().min(1, {
-    message: "場所を入力してください",
-  }),
-  totalAmount: z.coerce.number().min(0, {
-    message: "0以上の金額を入力してください",
-  }),
+const eventSchema = z.object({
+  name: z.string().min(1, "イベント名は必須です"),
+  date: z.string().min(1, "日付は必須です"),
+  location: z.string().optional(),
+  description: z.string().optional(),
+  totalAmount: z.number().optional(),
 });
 
-// フォームの型
-type EventFormValues = z.infer<typeof eventFormSchema>;
-
-// デフォルト値
-const defaultValues: Partial<EventFormValues> = {
-  name: "",
-  venue: "",
-  totalAmount: 0,
+type EventFormProps = {
+  defaultValues?: EventFormData;
+  eventId?: string;
 };
 
-export function EventForm() {
+export function EventForm({ defaultValues, eventId }: EventFormProps) {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
+  const isEditing = !!eventId;
 
-  // フォームの状態を初期化
-  const form = useForm<EventFormValues>({
-    resolver: zodResolver(eventFormSchema),
-    defaultValues,
+  const form = useForm<z.infer<typeof eventSchema>>({
+    resolver: zodResolver(eventSchema),
+    defaultValues: {
+      name: defaultValues?.name || "",
+      date: defaultValues?.date
+        ? new Date(defaultValues.date).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+      location: defaultValues?.location || "",
+      description: defaultValues?.description || "",
+      totalAmount: defaultValues?.totalAmount || 0,
+    },
   });
 
-  // フォーム送信ハンドラー
-  async function onSubmit(data: EventFormValues) {
-    setIsLoading(true);
-    
+  const onSubmit = async (data: z.infer<typeof eventSchema>) => {
     try {
-      // イベントをLocalStorageに保存
-      addEvent({
-        name: data.name,
-        date: data.date.toISOString(),
-        venue: data.venue,
-        totalAmount: data.totalAmount,
-      });
-      
-      // 成功したらイベント一覧ページに戻る
+      const eventData = {
+        ...data,
+        date: new Date(data.date),
+        totalAmount: data.totalAmount || 0,
+      };
+
+      if (isEditing && eventId) {
+        await updateEvent(eventId, eventData);
+        toast({
+          title: "イベントを更新しました",
+        });
+      } else {
+        await createEvent(eventData);
+        toast({
+          title: "新規イベントを作成しました",
+        });
+      }
+
       router.push("/events");
       router.refresh();
     } catch (error) {
-      console.error("イベントの作成に失敗しました", error);
-    } finally {
-      setIsLoading(false);
+      console.error("Failed to save event:", error);
+      toast({
+        title: "エラーが発生しました",
+        description: "イベントの保存に失敗しました。後でもう一度お試しください。",
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>イベント名</FormLabel>
-                <FormControl>
-                  <Input placeholder="例: カラオケ大会" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>イベント名</FormLabel>
+              <FormControl>
+                <Input placeholder="例: 新年会" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="date"
-            render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>日付</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-full pl-3 text-left font-normal",
-                          !field.value && "text-muted-foreground"
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, "yyyy/MM/dd")
-                        ) : (
-                          <span>日付を選択</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      disabled={(date) =>
-                        date < new Date("2000-01-01")
-                      }
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <FormField
+          control={form.control}
+          name="date"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>日付</FormLabel>
+              <FormControl>
+                <Input type="date" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="venue"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>場所</FormLabel>
-                <FormControl>
-                  <Input placeholder="例: 池尻、渋谷、川口など" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <FormField
+          control={form.control}
+          name="location"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>場所</FormLabel>
+              <FormControl>
+                <Input placeholder="例: 居酒屋〇〇" {...field} />
+              </FormControl>
+              <FormDescription>
+                任意の項目です
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="totalAmount"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>支払総額</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      placeholder="0"
-                      {...field}
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500">円</span>
-                    </div>
-                  </div>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>説明</FormLabel>
+              <FormControl>
+                <Textarea placeholder="イベントの詳細情報" {...field} />
+              </FormControl>
+              <FormDescription>
+                任意の項目です
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="flex justify-end space-x-4">
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={() => router.back()}
-            disabled={isLoading}
-          >
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={() => router.back()}>
             キャンセル
           </Button>
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? "保存中..." : "保存"}
+          <Button type="submit">
+            {isEditing ? "更新する" : "作成する"}
           </Button>
         </div>
       </form>

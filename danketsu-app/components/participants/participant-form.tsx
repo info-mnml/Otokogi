@@ -1,96 +1,93 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-
 import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { addParticipant } from "@/lib/utils/participants";
+import { toast } from "@/components/ui/use-toast";
+import { createParticipant, updateParticipant } from "@/lib/utils/participants";
+import type { ParticipantFormData } from "@/types";
 
-// 参加者フォームのバリデーションスキーマ
-const participantFormSchema = z.object({
-  name: z.string().min(1, {
-    message: "参加者名を入力してください",
-  }),
+const participantSchema = z.object({
+  name: z.string().min(1, "参加者名は必須です"),
 });
 
-// フォームの型
-type ParticipantFormValues = z.infer<typeof participantFormSchema>;
-
-// デフォルト値
-const defaultValues: Partial<ParticipantFormValues> = {
-  name: "",
+type ParticipantFormProps = {
+  defaultValues?: ParticipantFormData;
+  participantId?: string;
 };
 
-export function ParticipantForm() {
+export function ParticipantForm({ defaultValues, participantId }: ParticipantFormProps) {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
+  const isEditing = !!participantId;
 
-  // フォームの状態を初期化
-  const form = useForm<ParticipantFormValues>({
-    resolver: zodResolver(participantFormSchema),
-    defaultValues,
+  const form = useForm<z.infer<typeof participantSchema>>({
+    resolver: zodResolver(participantSchema),
+    defaultValues: {
+      name: defaultValues?.name || "",
+    },
   });
 
-  // フォーム送信ハンドラー
-  async function onSubmit(data: ParticipantFormValues) {
-    setIsLoading(true);
-    
+  const onSubmit = async (data: z.infer<typeof participantSchema>) => {
     try {
-      // 参加者をLocalStorageに保存
-      addParticipant(data.name);
-      
-      // 成功したら参加者一覧ページに戻る
+      const participantData = {
+        ...data,
+        winCount: defaultValues?.winCount || 0,
+        loseCount: defaultValues?.loseCount || 0,
+        totalPaid: defaultValues?.totalPaid || 0,
+        totalCollected: defaultValues?.totalCollected || 0,
+      };
+
+      if (isEditing && participantId) {
+        await updateParticipant(participantId, participantData);
+        toast({
+          title: "参加者情報を更新しました",
+        });
+      } else {
+        await createParticipant(participantData);
+        toast({
+          title: "新規参加者を登録しました",
+        });
+      }
+
       router.push("/participants");
       router.refresh();
     } catch (error) {
-      console.error("参加者の作成に失敗しました", error);
-    } finally {
-      setIsLoading(false);
+      console.error("Failed to save participant:", error);
+      toast({
+        title: "エラーが発生しました",
+        description: "参加者の保存に失敗しました。後でもう一度お試しください。",
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-        <div className="grid grid-cols-1 gap-6">
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>参加者名</FormLabel>
-                <FormControl>
-                  <Input placeholder="例: ゆうき" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>参加者名</FormLabel>
+              <FormControl>
+                <Input placeholder="例: 山田太郎" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="flex justify-end space-x-4">
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={() => router.back()}
-            disabled={isLoading}
-          >
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={() => router.back()}>
             キャンセル
           </Button>
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? "保存中..." : "保存"}
+          <Button type="submit">
+            {isEditing ? "更新する" : "登録する"}
           </Button>
         </div>
       </form>

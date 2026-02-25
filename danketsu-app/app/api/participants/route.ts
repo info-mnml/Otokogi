@@ -1,55 +1,25 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/db/prisma';
 
-// 参加者一覧を取得
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const participants = await prisma.participant.findMany({
-      where: {
-        userId: session.user.id,
-      },
-      include: {
-        participations: true,
-      },
-    });
-    
+    const participants = await prisma.participant.findMany();
     return NextResponse.json(participants);
   } catch (error) {
-    console.error('Error fetching participants:', error);
-    return NextResponse.json({ error: 'Failed to fetch participants' }, { status: 500 });
+    console.error('Failed to fetch participants:', error);
+    return NextResponse.json({ error: '参加者の取得に失敗しました' }, { status: 500 });
   }
 }
 
-// 新しい参加者を作成
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    const body = await request.json();
-    const { name } = body;
-    
-    const newParticipant = await prisma.participant.create({
-      data: {
-        name,
-        userId: session.user.id,
-      },
+    const data = await request.json();
+    const participant = await prisma.participant.create({
+      data,
     });
-    
-    return NextResponse.json(newParticipant, { status: 201 });
+    return NextResponse.json(participant, { status: 201 });
   } catch (error) {
-    console.error('Error creating participant:', error);
-    return NextResponse.json({ error: 'Failed to create participant' }, { status: 500 });
+    console.error('Failed to create participant:', error);
+    return NextResponse.json({ error: '参加者の作成に失敗しました' }, { status: 500 });
   }
 }
