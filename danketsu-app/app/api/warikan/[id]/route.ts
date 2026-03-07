@@ -54,7 +54,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params
     const body = await request.json()
-    const { eventName, status, managerId, detailDeadline, paymentDeadline, memo, walicaUrl, participantIds } = body
+    const { eventName, status, managerId, detailDeadline, paymentDeadline, memo, walicaUrl, eventId, participantIds } = body
 
     const event = await prisma.$transaction(async (tx) => {
       // 参加者の更新がある場合は差し替え
@@ -85,6 +85,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
           }),
           ...(memo !== undefined && { memo }),
           ...(walicaUrl !== undefined && { walicaUrl }),
+          ...(eventId !== undefined && { eventId: eventId || null }),
         },
         include: {
           manager: true,

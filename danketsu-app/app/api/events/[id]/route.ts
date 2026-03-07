@@ -82,6 +82,9 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('イベント削除エラー:', error)
+    if ((error as { code?: string }).code === 'P2025') {
+      return NextResponse.json({ error: 'イベントが見つかりません' }, { status: 404 })
+    }
     return NextResponse.json({ error: 'イベントの削除に失敗しました' }, { status: 500 })
   }
 }
