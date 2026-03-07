@@ -9,7 +9,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const { id } = await params
     const expenses = await prisma.warikanExpense.findMany({
       where: { warikanEventId: id },
-      include: { payer: true },
+      include: {
+        payer: true,
+        debtors: { include: { member: true } },
+      },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -28,7 +31,12 @@ export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params
     const body = await request.json()
-    const { payerId, description, amount } = body
+    const { payerId, description, amount, debtorIds } = body as {
+      payerId: string
+      description: string
+      amount: number
+      debtorIds?: string[] // 対象者。省略時は全参加者
+    }
 
     if (!payerId || !description || amount === undefined) {
       return NextResponse.json(
@@ -44,9 +52,10 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
-    // 割り勘イベントの存在確認
+    // 割り勘イベント＋参加者を取得
     const warikanEvent = await prisma.warikanEvent.findUnique({
       where: { id },
+      include: { participants: true },
     })
 
     if (!warikanEvent) {
@@ -63,14 +72,25 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
+    // 対象者：指定がなければ全参加者
+    const targetDebtorIds = debtorIds && debtorIds.length > 0
+      ? debtorIds
+      : warikanEvent.participants.map((p) => p.memberId)
+
     const expense = await prisma.warikanExpense.create({
       data: {
         warikanEventId: id,
         payerId,
         description,
         amount,
+        debtors: {
+          create: targetDebtorIds.map((memberId) => ({ memberId })),
+        },
       },
-      include: { payer: true },
+      include: {
+        payer: true,
+        debtors: { include: { member: true } },
+      },
     })
 
     return NextResponse.json(expense, { status: 201 })

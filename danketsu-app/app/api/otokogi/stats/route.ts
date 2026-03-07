@@ -1,11 +1,23 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 // GET /api/otokogi/stats — 男気統計情報
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const year = searchParams.get('year')
+
+    // 年度フィルター
+    const dateWhere: Record<string, unknown> = {}
+    if (year) {
+      const startDate = new Date(`${year}-01-01`)
+      const endDate = new Date(`${Number(year) + 1}-01-01`)
+      dateWhere.eventDate = { gte: startDate, lt: endDate }
+    }
+
     const [events, members] = await Promise.all([
       prisma.otokogiEvent.findMany({
+        where: dateWhere,
         include: {
           payer: true,
           participants: {

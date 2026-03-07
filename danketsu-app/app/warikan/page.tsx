@@ -85,9 +85,14 @@ export default function WarikanListPage() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold text-slate-800">割り勘管理</h2>
-        <Button asChild className="bg-slate-800 hover:bg-slate-700">
-          <Link href="/warikan/new">+ 新規作成</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/warikan/import">Walica取込</Link>
+          </Button>
+          <Button asChild className="bg-slate-800 hover:bg-slate-700">
+            <Link href="/warikan/new">+ 新規作成</Link>
+          </Button>
+        </div>
       </div>
 
       {/* フィルター */}

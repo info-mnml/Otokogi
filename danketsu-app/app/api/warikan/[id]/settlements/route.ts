@@ -31,12 +31,16 @@ export async function POST(_request: NextRequest, { params }: Params) {
   try {
     const { id } = await params
 
-    // 割り勘イベント取得（参加者・立替明細含む）
+    // 割り勘イベント取得（参加者・立替明細・対象者含む）
     const warikanEvent = await prisma.warikanEvent.findUnique({
       where: { id },
       include: {
         participants: true,
-        expenses: true,
+        expenses: {
+          include: {
+            debtors: true,
+          },
+        },
       },
     })
 
@@ -69,29 +73,40 @@ export async function POST(_request: NextRequest, { params }: Params) {
     }
 
     const participantIds = warikanEvent.participants.map((p) => p.memberId)
-    const participantCount = participantIds.length
 
-    // 各メンバーの支払合計を計算
+    // 各メンバーの立替額と負担額を計算
     const paidByMember: Record<string, number> = {}
+    const owedByMember: Record<string, number> = {}
     for (const memberId of participantIds) {
       paidByMember[memberId] = 0
+      owedByMember[memberId] = 0
     }
+
+    const totalAmount = warikanEvent.expenses.reduce((sum, e) => sum + e.amount, 0)
+
     for (const expense of warikanEvent.expenses) {
+      // 立替者の支払額を加算
       if (paidByMember[expense.payerId] !== undefined) {
         paidByMember[expense.payerId] += expense.amount
       }
+
+      // 対象者で按分（debtorsが空なら全参加者で均等割り）
+      const debtorMemberIds = expense.debtors.length > 0
+        ? expense.debtors.map((d) => d.memberId).filter((id) => participantIds.includes(id))
+        : participantIds
+      const sharePerDebtor = expense.amount / debtorMemberIds.length
+
+      for (const debtorId of debtorMemberIds) {
+        owedByMember[debtorId] = (owedByMember[debtorId] ?? 0) + sharePerDebtor
+      }
     }
 
-    // 合計額と一人あたりの負担額
-    const totalAmount = warikanEvent.expenses.reduce((sum, e) => sum + e.amount, 0)
-    const sharePerPerson = totalAmount / participantCount
-
-    // 各メンバーの収支（支払額 - 負担額）
+    // 各メンバーの収支（立替額 - 負担額）
     // プラス = 立替超過（受け取る側）、マイナス = 不足（支払う側）
     const balances: { memberId: string; balance: number }[] = participantIds.map(
       (memberId) => ({
         memberId,
-        balance: paidByMember[memberId] - sharePerPerson,
+        balance: paidByMember[memberId] - owedByMember[memberId],
       })
     )
 
@@ -161,7 +176,10 @@ export async function POST(_request: NextRequest, { params }: Params) {
             include: { member: true },
           },
           expenses: {
-            include: { payer: true },
+            include: {
+              payer: true,
+              debtors: { include: { member: true } },
+            },
           },
           settlements: {
             include: { fromMember: true, toMember: true },
@@ -175,7 +193,6 @@ export async function POST(_request: NextRequest, { params }: Params) {
       ...result,
       summary: {
         totalAmount,
-        sharePerPerson: Math.round(sharePerPerson),
         settlementCount: settlements.length,
       },
     })

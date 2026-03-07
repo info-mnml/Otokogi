@@ -16,7 +16,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
           include: { member: true },
         },
         expenses: {
-          include: { payer: true },
+          include: {
+            payer: true,
+            debtors: { include: { member: true } },
+          },
           orderBy: { createdAt: 'desc' },
         },
         settlements: {
@@ -89,7 +92,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
             include: { member: true },
           },
           expenses: {
-            include: { payer: true },
+            include: {
+              payer: true,
+              debtors: { include: { member: true } },
+            },
           },
           settlements: {
             include: { fromMember: true, toMember: true },

@@ -108,18 +108,18 @@ export default async function DashboardPage() {
           <CardTitle className="text-slate-800">累計統計</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="grid grid-cols-3 gap-2 text-center">
             <div>
-              <p className="text-2xl font-bold text-slate-800">{totalEvents}</p>
-              <p className="text-xs text-gray-500">総イベント数</p>
+              <p className="text-xl sm:text-2xl font-bold text-slate-800">{totalEvents}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500">総イベント数</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-800">¥{totalAmount.toLocaleString()}</p>
-              <p className="text-xs text-gray-500">累計金額</p>
+              <p className="text-base sm:text-2xl font-bold text-slate-800 truncate">¥{totalAmount.toLocaleString()}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500">累計金額</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-amber-600">{topPayer?.name ?? '-'}</p>
-              <p className="text-xs text-gray-500">最多支払者</p>
+              <p className="text-xl sm:text-2xl font-bold text-amber-600 truncate">{topPayer?.name ?? '-'}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500">最多支払者</p>
             </div>
           </div>
         </CardContent>

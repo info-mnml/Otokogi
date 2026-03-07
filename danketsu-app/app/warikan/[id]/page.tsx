@@ -25,12 +25,18 @@ type Member = {
   paypayId: string | null;
 };
 
+type ExpenseDebtor = {
+  memberId: string;
+  member: Member;
+};
+
 type Expense = {
   id: string;
   payerId: string;
   description: string;
   amount: number;
   payer: Member;
+  debtors: ExpenseDebtor[];
 };
 
 type Settlement = {
@@ -89,6 +95,7 @@ export default function WarikanDetailPage() {
   const [expensePayerId, setExpensePayerId] = useState('');
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDebtorIds, setExpenseDebtorIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
   const fetchEvent = useCallback(async () => {
@@ -108,6 +115,10 @@ export default function WarikanDetailPage() {
     if (!expensePayerId || !expenseDescription || !expenseAmount) return;
     setSubmitting(true);
 
+    // 全員選択ならdebtorIds省略（API側で全参加者になる）
+    const allSelected = event && expenseDebtorIds.size === event.participants.length;
+    const debtorIds = allSelected ? undefined : [...expenseDebtorIds];
+
     const res = await fetch(`/api/warikan/${id}/expenses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -115,6 +126,7 @@ export default function WarikanDetailPage() {
         payerId: expensePayerId,
         description: expenseDescription,
         amount: Number(expenseAmount),
+        ...(debtorIds && { debtorIds }),
       }),
     });
 
@@ -122,6 +134,7 @@ export default function WarikanDetailPage() {
       setExpensePayerId('');
       setExpenseDescription('');
       setExpenseAmount('');
+      setExpenseDebtorIds(new Set());
       setShowExpenseForm(false);
       fetchEvent();
     } else {
@@ -184,13 +197,13 @@ export default function WarikanDetailPage() {
         {/* イベント情報 */}
         <Card>
           <CardContent className="pt-5">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">{event.eventName}</h3>
-                <p className="text-sm text-gray-500 mt-1">管理大臣: {event.manager?.name ?? '未設定'}（{event.manager?.fullName ?? ''}）</p>
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-bold text-slate-800 truncate">{event.eventName}</h3>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">管理: {event.manager?.name ?? '未設定'}</p>
               </div>
               <Select value={event.status} onValueChange={handleStatusChange}>
-                <SelectTrigger className="w-auto">
+                <SelectTrigger className="w-auto shrink-0">
                   {statusBadge(event.status)}
                 </SelectTrigger>
                 <SelectContent>
@@ -227,18 +240,26 @@ export default function WarikanDetailPage() {
               <p className="text-sm text-gray-500">まだ明細がありません</p>
             ) : (
               <div className="space-y-2">
-                {event.expenses.map((expense) => (
-                  <div key={expense.id} className="flex items-center justify-between py-2 border-b last:border-b-0">
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">{expense.payer.name}（{expense.payer.fullName}）</p>
-                      <p className="text-xs text-gray-500">{expense.description}</p>
+                {event.expenses.map((expense) => {
+                  const isAllMembers = expense.debtors.length === 0 || expense.debtors.length === event.participants.length;
+                  const debtorNames = isAllMembers ? '全員' : expense.debtors.map((d) => d.member.name).join('・');
+                  return (
+                    <div key={expense.id} className="flex items-center justify-between gap-2 py-2 border-b last:border-b-0">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{expense.payer.name}</p>
+                        <p className="text-xs text-gray-500 truncate">{expense.description}</p>
+                        <p className="text-xs text-gray-400 truncate">対象: {debtorNames}</p>
+                      </div>
+                      <p className="font-bold text-sm text-slate-800 shrink-0">¥{expense.amount.toLocaleString()}</p>
                     </div>
-                    <p className="font-bold text-slate-800">¥{expense.amount.toLocaleString()}</p>
+                  );
+                })}
+                <div className="mt-3 pt-3 border-t font-bold text-slate-800">
+                  <div className="flex justify-between">
+                    <span>合計</span>
+                    <span>¥{totalExpenses.toLocaleString()}</span>
                   </div>
-                ))}
-                <div className="flex justify-between mt-3 pt-3 border-t font-bold text-slate-800">
-                  <span>合計</span>
-                  <span>¥{totalExpenses.toLocaleString()}（1人あたり ¥{perPerson.toLocaleString()}）</span>
+                  <p className="text-xs font-normal text-gray-500 text-right mt-0.5">1人あたり ¥{perPerson.toLocaleString()}</p>
                 </div>
               </div>
             )}
@@ -274,6 +295,51 @@ export default function WarikanDetailPage() {
                       value={expenseDescription}
                       onChange={(e) => setExpenseDescription(e.target.value)}
                     />
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label className="text-xs text-gray-500">対象者</Label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-500 hover:underline"
+                          onClick={() => {
+                            if (expenseDebtorIds.size === event.participants.length) {
+                              setExpenseDebtorIds(new Set());
+                            } else {
+                              setExpenseDebtorIds(new Set(event.participants.map((p) => p.member.id)));
+                            }
+                          }}
+                        >
+                          {expenseDebtorIds.size === event.participants.length ? '全解除' : '全選択'}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {event.participants.map((p) => {
+                          const checked = expenseDebtorIds.has(p.member.id);
+                          return (
+                            <button
+                              key={p.member.id}
+                              type="button"
+                              className={`text-xs px-2 py-1 rounded-full border transition ${
+                                checked
+                                  ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                  : 'bg-gray-50 text-gray-400 border-gray-200'
+                              }`}
+                              onClick={() => {
+                                const next = new Set(expenseDebtorIds);
+                                if (checked) {
+                                  next.delete(p.member.id);
+                                } else {
+                                  next.add(p.member.id);
+                                }
+                                setExpenseDebtorIds(next);
+                              }}
+                            >
+                              {p.member.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -286,7 +352,7 @@ export default function WarikanDetailPage() {
                         size="sm"
                         className="bg-slate-800 hover:bg-slate-700"
                         onClick={handleAddExpense}
-                        disabled={submitting || !expensePayerId || !expenseDescription || !expenseAmount}
+                        disabled={submitting || !expensePayerId || !expenseDescription || !expenseAmount || expenseDebtorIds.size === 0}
                       >
                         追加
                       </Button>
@@ -295,7 +361,10 @@ export default function WarikanDetailPage() {
                 ) : (
                   <button
                     className="mt-3 w-full border-2 border-dashed border-gray-300 rounded-lg py-2 text-sm text-gray-500 hover:border-amber-400 hover:text-amber-600 transition"
-                    onClick={() => setShowExpenseForm(true)}
+                    onClick={() => {
+                      setExpenseDebtorIds(new Set(event.participants.map((p) => p.member.id)));
+                      setShowExpenseForm(true);
+                    }}
                   >
                     + 立替を追加
                   </button>
@@ -332,51 +401,49 @@ export default function WarikanDetailPage() {
                 {event.settlements.map((settlement) => (
                   <div key={settlement.id} className="bg-gray-50 rounded-lg p-3 border">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium">{settlement.fromMember.name}</span>
-                        <span className="text-gray-400">&rarr;</span>
-                        <span className="font-medium">{settlement.toMember.name}</span>
+                      <div className="flex items-center gap-1.5 text-sm min-w-0">
+                        <span className="font-medium shrink-0">{settlement.fromMember.name}</span>
+                        <span className="text-gray-400 shrink-0">&rarr;</span>
+                        <span className="font-medium shrink-0">{settlement.toMember.name}</span>
                       </div>
-                      <span className="font-bold text-lg">¥{settlement.amount.toLocaleString()}</span>
+                      <span className="font-bold text-sm sm:text-lg shrink-0 ml-2">¥{settlement.amount.toLocaleString()}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-gray-500">
-                        {settlement.toMember.paypayId && (
-                          <>送金先: <span className="text-red-500 font-mono font-medium">@{settlement.toMember.paypayId}</span></>
-                        )}
+                    {settlement.toMember.paypayId && (
+                      <p className="text-xs text-gray-500 mb-2">
+                        送金先: <span className="text-red-500 font-mono font-medium">@{settlement.toMember.paypayId}</span>
                       </p>
-                      <div className="flex items-center gap-2">
-                        {settlement.toMember.paypayId && (
-                          <a
-                            href={`paypay://transfer?userId=${settlement.toMember.paypayId}&amount=${settlement.amount}`}
-                            className="inline-flex items-center gap-1 bg-red-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-red-600 transition"
-                          >
-                            Pay 送金
-                          </a>
-                        )}
-                        {!settlement.isPaid && event.status !== 'CLOSED' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleSettlementAction(settlement.id, 'pay')}
-                          >
-                            送金済み
-                          </Button>
-                        )}
-                        {settlement.isPaid && !settlement.isReceived && event.status !== 'CLOSED' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-green-600 border-green-300"
-                            onClick={() => handleSettlementAction(settlement.id, 'receive')}
-                          >
-                            受領確認
-                          </Button>
-                        )}
-                        {settlement.isReceived && (
-                          <span className="text-xs text-green-600 font-medium">受領済み</span>
-                        )}
-                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {settlement.toMember.paypayId && (
+                        <a
+                          href={`paypay://transfer?userId=${settlement.toMember.paypayId}&amount=${settlement.amount}`}
+                          className="inline-flex items-center gap-1 bg-red-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-red-600 transition"
+                        >
+                          Pay 送金
+                        </a>
+                      )}
+                      {!settlement.isPaid && event.status !== 'CLOSED' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSettlementAction(settlement.id, 'pay')}
+                        >
+                          送金済み
+                        </Button>
+                      )}
+                      {settlement.isPaid && !settlement.isReceived && event.status !== 'CLOSED' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-green-600 border-green-300"
+                          onClick={() => handleSettlementAction(settlement.id, 'receive')}
+                        >
+                          受領確認
+                        </Button>
+                      )}
+                      {settlement.isReceived && (
+                        <span className="text-xs text-green-600 font-medium">受領済み</span>
+                      )}
                     </div>
                   </div>
                 ))}

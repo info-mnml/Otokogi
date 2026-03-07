@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'ダッシュボード', href: '/' },
+  { name: 'カレンダー', href: '/calendar' },
   { name: '割り勘管理', href: '/warikan' },
   { name: '男気管理', href: '/otokogi' },
   { name: 'メンバー管理', href: '/members' },
