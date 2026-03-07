@@ -25,8 +25,7 @@ function formatShortDate(date: Date | string | null) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default async function DashboardPage() {
-  // 未精算の割り勘
+async function fetchDashboardData() {
   const openWarikan = await prisma.warikanEvent.findMany({
     where: { status: { not: 'CLOSED' } },
     include: {
@@ -37,7 +36,6 @@ export default async function DashboardPage() {
     orderBy: { createdAt: 'desc' },
   });
 
-  // 最近の男気（直近5件）
   const recentOtokogi = await prisma.otokogiEvent.findMany({
     include: {
       payer: true,
@@ -47,7 +45,6 @@ export default async function DashboardPage() {
     take: 5,
   });
 
-  // 累計統計
   const allOtokogi = await prisma.otokogiEvent.findMany({
     include: { payer: true },
   });
@@ -55,7 +52,6 @@ export default async function DashboardPage() {
   const totalEvents = allOtokogi.length;
   const totalAmount = allOtokogi.reduce((sum, e) => sum + e.amount, 0);
 
-  // トップ支払者
   const payerMap = new Map<string, { name: string; total: number }>();
   for (const event of allOtokogi) {
     const existing = payerMap.get(event.payerId);
@@ -66,6 +62,43 @@ export default async function DashboardPage() {
     }
   }
   const topPayer = Array.from(payerMap.values()).sort((a, b) => b.total - a.total)[0];
+
+  return { openWarikan, recentOtokogi, totalEvents, totalAmount, topPayer };
+}
+
+export default async function DashboardPage() {
+  let data: Awaited<ReturnType<typeof fetchDashboardData>> | null = null;
+
+  try {
+    data = await fetchDashboardData();
+  } catch {
+    // DB未接続時
+  }
+
+  if (!data) {
+    return (
+      <div className="grid gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-amber-600">データベース未接続のため、データを表示できません。</p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/warikan">割り勘管理</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/otokogi">男気管理</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/members">メンバー管理</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const { openWarikan, recentOtokogi, totalEvents, totalAmount, topPayer } = data;
 
   return (
     <div className="grid gap-4">
