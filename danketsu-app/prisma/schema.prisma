@@ -1,50 +1,154 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// The botch — Prisma スキーマ（PostgreSQL）
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "mongodb"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model Event {
-  id             String          @id @default(auto()) @map("_id") @db.ObjectId
-  name           String
-  date           DateTime
-  location       String?
-  description    String?
-  totalAmount    Float?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  participations Participation[]
+// ============================================================
+// 1. メンバー
+// ============================================================
+model Member {
+  id        String   @id @default(uuid())
+  name      String   @unique // 表示名（ゆうき、ゆうへい等）
+  fullName  String   @map("full_name") // 姓（内山、大崎等）
+  initial   String   @db.Char(1) // アバター用
+  colorBg   String   @default("bg-gray-100") @map("color_bg")
+  colorText String   @default("text-gray-700") @map("color_text")
+  paypayId  String?  @map("paypay_id") // PayPay ID（@xxx）
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // リレーション
+  otokogiEventsPaid      OtokogiEvent[]
+  otokogiParticipations  OtokogiParticipant[]
+  warikanManaged         WarikanEvent[]        @relation("WarikanManager")
+  warikanParticipations  WarikanParticipant[]
+  warikanExpensesPaid    WarikanExpense[]
+  settlementsFrom        WarikanSettlement[]   @relation("SettlementFrom")
+  settlementsTo          WarikanSettlement[]   @relation("SettlementTo")
+
+  @@map("members")
 }
 
-model Participant {
-  id             String          @id @default(auto()) @map("_id") @db.ObjectId
-  name           String
-  winCount       Int             @default(0)
-  loseCount      Int             @default(0)
-  totalPaid      Float           @default(0)
-  totalCollected Float           @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  participations Participation[]
+// ============================================================
+// 2. 男気イベント
+// ============================================================
+model OtokogiEvent {
+  id        String   @id @default(uuid())
+  eventDate DateTime @map("event_date") @db.Date
+  eventName String   @map("event_name") @db.VarChar(100)
+  payerId   String   @map("payer_id")
+  amount    Int      // 支払額（円）
+  place     String?  @db.VarChar(100)
+  hasAlbum  Boolean  @default(false) @map("has_album")
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // リレーション
+  payer        Member               @relation(fields: [payerId], references: [id])
+  participants OtokogiParticipant[]
+
+  @@index([eventDate(sort: Desc)])
+  @@index([payerId])
+  @@map("otokogi_events")
 }
 
-model Participation {
-  id                 String      @id @default(auto()) @map("_id") @db.ObjectId
-  eventId            String      @db.ObjectId
-  participantId      String      @db.ObjectId
-  isWinner           Boolean?
-  amountPaid         Float       @default(0)
-  amountCollected    Float       @default(0)
-  jankenChoiceWinner String?     // グー、チョキ、パー
-  jankenChoiceLoser  String?     // グー、チョキ、パー
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-  event              Event       @relation(fields: [eventId], references: [id])
-  participant        Participant @relation(fields: [participantId], references: [id])
+// 男気イベント参加者（多対多）
+model OtokogiParticipant {
+  otokogiEventId String @map("otokogi_event_id")
+  memberId       String @map("member_id")
+
+  otokogiEvent OtokogiEvent @relation(fields: [otokogiEventId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id])
+
+  @@id([otokogiEventId, memberId])
+  @@map("otokogi_participants")
+}
+
+// ============================================================
+// 3. 割り勘イベント
+// ============================================================
+enum WarikanStatus {
+  ENTERING   @map("明細入力中")
+  PAYING     @map("支払待ち")
+  CLOSED     @map("クローズ")
+
+  @@map("warikan_status")
+}
+
+model WarikanEvent {
+  id              String        @id @default(uuid())
+  eventName       String        @map("event_name") @db.VarChar(200)
+  status          WarikanStatus @default(ENTERING)
+  detailDeadline  DateTime?     @map("detail_deadline") @db.Date
+  paymentDeadline DateTime?     @map("payment_deadline") @db.Date
+  memo            String?
+  managerId       String?       @map("manager_id")
+  walicaUrl       String?       @map("walica_url") @db.VarChar(255)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // リレーション
+  manager      Member?              @relation("WarikanManager", fields: [managerId], references: [id])
+  participants WarikanParticipant[]
+  expenses     WarikanExpense[]
+  settlements  WarikanSettlement[]
+
+  @@index([status])
+  @@map("warikan_events")
+}
+
+// 割り勘参加者
+model WarikanParticipant {
+  warikanEventId String @map("warikan_event_id")
+  memberId       String @map("member_id")
+
+  warikanEvent WarikanEvent @relation(fields: [warikanEventId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id])
+
+  @@id([warikanEventId, memberId])
+  @@map("warikan_participants")
+}
+
+// 割り勘立替明細
+model WarikanExpense {
+  id             String   @id @default(uuid())
+  warikanEventId String   @map("warikan_event_id")
+  payerId        String   @map("payer_id")
+  description    String   @db.VarChar(200) // 内容（コート代、ボール等）
+  amount         Int      // 金額（円）
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  warikanEvent WarikanEvent @relation(fields: [warikanEventId], references: [id], onDelete: Cascade)
+  payer        Member       @relation(fields: [payerId], references: [id])
+
+  @@map("warikan_expenses")
+}
+
+// 割り勘精算結果（A→B 送金指示）
+model WarikanSettlement {
+  id             String    @id @default(uuid())
+  warikanEventId String    @map("warikan_event_id")
+  fromMemberId   String    @map("from_member_id")
+  toMemberId     String    @map("to_member_id")
+  amount         Int       // 送金額（円）
+  isPaid         Boolean   @default(false) @map("is_paid")
+  isReceived     Boolean   @default(false) @map("is_received")
+  paidAt         DateTime? @map("paid_at")
+  receivedAt     DateTime? @map("received_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  warikanEvent WarikanEvent @relation(fields: [warikanEventId], references: [id], onDelete: Cascade)
+  fromMember   Member       @relation("SettlementFrom", fields: [fromMemberId], references: [id])
+  toMember     Member       @relation("SettlementTo", fields: [toMemberId], references: [id])
+
+  @@index([warikanEventId])
+  @@map("warikan_settlements")
 }
