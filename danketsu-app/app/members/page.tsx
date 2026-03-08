@@ -22,9 +22,15 @@ export default function MembersPage() {
 
   useEffect(() => {
     fetch('/api/members')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error('API error');
+        return res.json();
+      })
       .then((data) => {
         setMembers(data);
+        setLoading(false);
+      })
+      .catch(() => {
         setLoading(false);
       });
   }, []);

@@ -35,8 +35,12 @@ export default function OtokogiNewPage() {
 
   useEffect(() => {
     fetch('/api/members')
-      .then((res) => res.json())
-      .then((data) => setMembers(data));
+      .then((res) => {
+        if (!res.ok) throw new Error('API error');
+        return res.json();
+      })
+      .then((data) => setMembers(data))
+      .catch(() => {});
   }, []);
 
   const toggleParticipant = (id: string) => {
@@ -148,6 +152,9 @@ export default function OtokogiNewPage() {
             <div className="relative mt-1">
               <span className="absolute left-3 top-2 text-gray-500">&yen;</span>
               <Input
+                type="number"
+                min={1}
+                step={1}
                 className="pl-7 text-right font-mono"
                 placeholder="0"
                 value={amount}

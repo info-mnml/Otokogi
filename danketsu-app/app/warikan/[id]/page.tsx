@@ -158,6 +158,8 @@ export default function WarikanDetailPage() {
   };
 
   const handleSettlementAction = async (settlementId: string, action: 'pay' | 'receive') => {
+    if (submitting) return;
+    setSubmitting(true);
     const res = await fetch(`/api/warikan/${id}/settlements/${settlementId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -166,9 +168,12 @@ export default function WarikanDetailPage() {
     if (res.ok) {
       fetchEvent();
     }
+    setSubmitting(false);
   };
 
   const handleStatusChange = async (newStatus: string) => {
+    if (submitting) return;
+    setSubmitting(true);
     const res = await fetch(`/api/warikan/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -177,6 +182,7 @@ export default function WarikanDetailPage() {
     if (res.ok) {
       fetchEvent();
     }
+    setSubmitting(false);
   };
 
   if (loading) return <p className="text-sm text-gray-500">読み込み中...</p>;
@@ -284,6 +290,8 @@ export default function WarikanDetailPage() {
                       </Select>
                       <Input
                         type="number"
+                        min={1}
+                        step={1}
                         className="w-28 text-right font-mono"
                         placeholder="金額"
                         value={expenseAmount}
@@ -426,6 +434,7 @@ export default function WarikanDetailPage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          disabled={submitting}
                           onClick={() => handleSettlementAction(settlement.id, 'pay')}
                         >
                           送金済み
@@ -436,6 +445,7 @@ export default function WarikanDetailPage() {
                           variant="outline"
                           size="sm"
                           className="text-green-600 border-green-300"
+                          disabled={submitting}
                           onClick={() => handleSettlementAction(settlement.id, 'receive')}
                         >
                           受領確認

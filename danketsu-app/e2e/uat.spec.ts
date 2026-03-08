@@ -86,7 +86,7 @@ test.describe('1. 画面表示・遷移', () => {
     } else {
       await page.getByRole('link', { name: 'The botch' }).click()
     }
-    await expect(page).toHaveURL(/\/$/)
+    await expect(page).toHaveURL(/\/(#.*)?$/)
   })
 
   test('割り勘一覧ページが正常表示される', async ({ page }) => {

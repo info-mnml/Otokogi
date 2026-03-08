@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,11 +38,16 @@ export default function NewEventPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch('/api/members').then((r) => r.json()).then((data) => {
-      setMembers(data);
-      // 全員デフォルト選択
-      setParticipantIds(data.map((m: Member) => m.id));
-    });
+    fetch('/api/members')
+      .then((r) => {
+        if (!r.ok) throw new Error('API error');
+        return r.json();
+      })
+      .then((data) => {
+        setMembers(data);
+        setParticipantIds(data.map((m: Member) => m.id));
+      })
+      .catch(() => {});
   }, []);
 
   const toggleParticipant = (id: string) => {
@@ -71,11 +77,18 @@ export default function NewEventPage() {
     if (res.ok) {
       router.push('/calendar');
     } else {
+      const data = await res.json().catch(() => ({}));
       setSubmitting(false);
+      alert(data.error || '登録に失敗しました');
     }
   };
 
   return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <Link href="/calendar" className="text-gray-500 hover:text-gray-700">← 戻る</Link>
+        <h2 className="text-xl font-bold text-slate-800">予定を追加</h2>
+      </div>
     <Card>
       <CardHeader>
         <CardTitle className="text-slate-800">予定を追加</CardTitle>
@@ -165,14 +178,20 @@ export default function NewEventPage() {
         </div>
 
         {/* 送信ボタン */}
-        <Button
-          onClick={handleSubmit}
-          disabled={!title || !date || !createdById || submitting}
-          className="w-full bg-slate-800 hover:bg-slate-700"
-        >
-          {submitting ? '登録中...' : '予定を登録'}
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="outline" className="flex-1" asChild>
+            <Link href="/calendar">キャンセル</Link>
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!title || !date || !createdById || submitting}
+            className="flex-1 bg-slate-800 hover:bg-slate-700"
+          >
+            {submitting ? '登録中...' : '予定を登録'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
+    </div>
   );
 }

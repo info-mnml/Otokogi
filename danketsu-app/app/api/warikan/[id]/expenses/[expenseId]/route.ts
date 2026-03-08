@@ -29,10 +29,21 @@ export async function PUT(request: NextRequest, { params }: Params) {
       )
     }
 
-    if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
+    if (amount !== undefined && (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0)) {
       return NextResponse.json(
-        { error: 'amount は0より大きい数値を指定してください' },
+        { error: 'amount は1以上の整数を指定してください' },
         { status: 400 }
+      )
+    }
+
+    // expenseがこのwarikanEventに属するか検証
+    const existingExpense = await prisma.warikanExpense.findFirst({
+      where: { id: expenseId, warikanEventId: id },
+    })
+    if (!existingExpense) {
+      return NextResponse.json(
+        { error: '立替明細が見つかりません' },
+        { status: 404 }
       )
     }
 
@@ -83,6 +94,17 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: '明細入力中のイベントからのみ削除できます' },
         { status: 400 }
+      )
+    }
+
+    // expenseがこのwarikanEventに属するか検証
+    const targetExpense = await prisma.warikanExpense.findFirst({
+      where: { id: expenseId, warikanEventId: id },
+    })
+    if (!targetExpense) {
+      return NextResponse.json(
+        { error: '立替明細が見つかりません' },
+        { status: 404 }
       )
     }
 

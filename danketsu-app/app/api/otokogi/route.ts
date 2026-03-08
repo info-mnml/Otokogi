@@ -47,9 +47,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { eventDate, eventName, payerId, amount, place, hasAlbum, memo, participantIds } = body
 
-    if (!eventDate || !eventName || !payerId || amount === undefined) {
+    if (!eventDate || !eventName || !payerId || amount === undefined || amount === null) {
       return NextResponse.json(
         { error: 'eventDate, eventName, payerId, amount は必須です' },
+        { status: 400 }
+      )
+    }
+
+    if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0) {
+      return NextResponse.json(
+        { error: 'amount は1以上の整数を指定してください' },
         { status: 400 }
       )
     }

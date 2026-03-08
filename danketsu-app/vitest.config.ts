@@ -7,6 +7,7 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 30000,
     hookTimeout: 30000,
+    exclude: ['e2e/**', 'node_modules/**'],
     // テスト間でDBの競合を避けるため直列実行
     sequence: {
       concurrent: false,

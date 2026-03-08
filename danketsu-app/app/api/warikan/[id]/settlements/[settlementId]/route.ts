@@ -43,6 +43,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         ? { isPaid: true, paidAt: now }
         : { isReceived: true, receivedAt: now }
 
+    // settlementがこのwarikanEventに属するか検証
+    const existing = await prisma.warikanSettlement.findFirst({
+      where: { id: settlementId, warikanEventId: id },
+    })
+    if (!existing) {
+      return NextResponse.json(
+        { error: '精算レコードが見つかりません' },
+        { status: 404 }
+      )
+    }
+
     const settlement = await prisma.warikanSettlement.update({
       where: { id: settlementId },
       data: updateData,

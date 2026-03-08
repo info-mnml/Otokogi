@@ -35,7 +35,10 @@ export default function MemberEditPage() {
 
   useEffect(() => {
     fetch(`/api/members/${id}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error('API error');
+        return res.json();
+      })
       .then((data) => {
         setName(data.name);
         setFullName(data.fullName);
@@ -44,6 +47,9 @@ export default function MemberEditPage() {
         setColorText(data.colorText);
         setPaypayId(data.paypayId || '');
         setIsActive(data.isActive);
+        setLoading(false);
+      })
+      .catch(() => {
         setLoading(false);
       });
   }, [id]);
@@ -74,8 +80,9 @@ export default function MemberEditPage() {
     if (res.ok) {
       router.push('/members');
     } else {
+      const data = await res.json().catch(() => ({}));
       setSaving(false);
-      alert('更新に失敗しました');
+      alert(data.error || '更新に失敗しました');
     }
   };
 

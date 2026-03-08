@@ -45,9 +45,9 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
-    if (typeof amount !== 'number' || amount <= 0) {
+    if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0) {
       return NextResponse.json(
-        { error: 'amount は0より大きい数値を指定してください' },
+        { error: 'amount は1以上の整数を指定してください' },
         { status: 400 }
       )
     }

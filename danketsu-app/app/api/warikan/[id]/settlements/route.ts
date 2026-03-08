@@ -85,19 +85,26 @@ export async function POST(_request: NextRequest, { params }: Params) {
     const totalAmount = warikanEvent.expenses.reduce((sum, e) => sum + e.amount, 0)
 
     for (const expense of warikanEvent.expenses) {
-      // 立替者の支払額を加算
-      if (paidByMember[expense.payerId] !== undefined) {
-        paidByMember[expense.payerId] += expense.amount
+      // 立替者の支払額を加算（参加者でない立替者もバランスに含める）
+      if (paidByMember[expense.payerId] === undefined) {
+        paidByMember[expense.payerId] = 0
+        owedByMember[expense.payerId] = 0
       }
+      paidByMember[expense.payerId] += expense.amount
 
       // 対象者で按分（debtorsが空なら全参加者で均等割り）
-      const debtorMemberIds = expense.debtors.length > 0
+      const filteredDebtors = expense.debtors.length > 0
         ? expense.debtors.map((d) => d.memberId).filter((id) => participantIds.includes(id))
-        : participantIds
-      const sharePerDebtor = expense.amount / debtorMemberIds.length
+        : []
+      // debtors指定なし or 全員フィルタで消えた場合は全参加者にフォールバック
+      const debtorMemberIds = filteredDebtors.length > 0 ? filteredDebtors : participantIds
 
-      for (const debtorId of debtorMemberIds) {
-        owedByMember[debtorId] = (owedByMember[debtorId] ?? 0) + sharePerDebtor
+      // 整数演算: 端数は先頭のメンバーに割り当て（1円も失わない）
+      const baseShare = Math.floor(expense.amount / debtorMemberIds.length)
+      const remainder = expense.amount % debtorMemberIds.length
+      for (let i = 0; i < debtorMemberIds.length; i++) {
+        const share = baseShare + (i < remainder ? 1 : 0)
+        owedByMember[debtorMemberIds[i]] = (owedByMember[debtorMemberIds[i]] ?? 0) + share
       }
     }
 
